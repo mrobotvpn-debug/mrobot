@@ -4,22 +4,17 @@ import hashlib
 import logging
 from telebot import types
 
-# Настройка логирования (чтобы видеть ошибки в консоли сервера)
+# Логирование в консоль (проверяйте логи на хостинге!)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# КОНФИГУРАЦИЯ
 BOT_TOKEN = "8842376879:AAEqSCCPITN9PmG5bRQfYmfeFOiXGUcg_18"
-ADMIN_ID = 8414885700  # Ваш подтвержденный ID
+ADMIN_ID = 8414885700
 KEY_SECRET = "mrobot_ultra_secret_2024"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Состояния пользователей
-user_states = {}
-
 def generate_key(days):
-    """Генерация ключа по алгоритму Mrobot"""
     expiry_unix = int(time.time() + (days * 86400))
     expiry_str = str(expiry_unix)
     sign_src = expiry_str + KEY_SECRET
@@ -37,72 +32,42 @@ def get_main_keyboard():
     )
     return markup
 
-@bot.message_handler(commands=['start', 'admin'])
-def start_cmd(message):
-    logger.info(f"Получена команда /start от {message.from_user.id}")
+@bot.message_handler(commands=['start'])
+def start_handler(message):
+    logger.info(f"Command /start from {message.from_user.id}")
     if message.from_user.id == ADMIN_ID:
-        bot.send_message(
-            message.chat.id,
-            "👋 Привет, Админ! Выберите срок для генерации ключа mrobot:",
-            reply_markup=get_main_keyboard()
-        )
+        bot.send_message(message.chat.id, "💎 Админ-панель Mrobot запущенна.\nВыберите срок ключа:", reply_markup=get_main_keyboard())
     else:
-        bot.send_message(
-            message.chat.id,
-            f"❌ Доступ запрещен.\nВаш ID: `{message.from_user.id}`\nСообщите его разработчику.",
-            parse_mode="Markdown"
-        )
+        bot.send_message(message.chat.id, f"🚫 Нет доступа.\nВаш ID: `{message.from_user.id}`", parse_mode="Markdown")
 
-@bot.message_handler(commands=['myid'])
-def myid_cmd(message):
-    bot.send_message(message.chat.id, f"Ваш Telegram ID: `{message.from_user.id}`", parse_mode="Markdown")
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    if call.from_user.id != ADMIN_ID: return
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('gen_'))
-def handle_callbacks(call):
-    if call.from_user.id != ADMIN_ID:
-        return bot.answer_callback_query(call.id, "Нет доступа")
-
-    action = call.data.split('_')[1]
-
-    if action == "custom":
-        user_states[call.from_user.id] = "waiting_days"
-        bot.send_message(call.message.chat.id, "⌛ Введите количество дней (только число):")
-    else:
-        days = int(action)
+    if call.data == "gen_custom":
+        msg = bot.send_message(call.message.chat.id, "⌛ Введите количество дней числом:")
+        bot.register_next_step_handler(msg, process_custom_days)
+    elif call.data.startswith("gen_"):
+        days = int(call.data.split("_")[1])
         key = generate_key(days)
-        bot.send_message(
-            call.message.chat.id,
-            f"✅ Ключ mrobot создан на {days} дн.\n\n`{key}`",
-            parse_mode="Markdown"
-        )
+        bot.send_message(call.message.chat.id, f"✅ Ключ на {days} дн:\n\n`{key}`", parse_mode="Markdown")
+
     bot.answer_callback_query(call.id)
 
-@bot.message_handler(func=lambda message: user_states.get(message.from_user.id) == "waiting_days")
-def handle_custom_days(message):
-    if message.from_user.id != ADMIN_ID: return
-
+def process_custom_days(message):
     try:
-        days = int(message.text.strip())
-        if days <= 0: raise ValueError
-
+        days = int(message.text)
         key = generate_key(days)
-        bot.send_message(
-            message.chat.id,
-            f"✅ Ключ mrobot создан на {days} дн.\n\n`{key}`",
-            parse_mode="Markdown"
-        )
-        user_states[message.from_user.id] = None
-    except ValueError:
-        bot.send_message(message.chat.id, "❌ Ошибка! Введите целое число дней (например, 15).")
-
-@bot.message_handler(func=lambda message: True)
-def log_all(message):
-    """Логируем все сообщения для отладки"""
-    logger.info(f"Сообщение от {message.from_user.id}: {message.text}")
-    if message.from_user.id == ADMIN_ID:
-        # Если вы просто пишете в бот, это сообщение будет доступно EXE-клиенту как ответ
-        pass
+        bot.send_message(message.chat.id, f"✅ Ключ на {days} дн:\n\n`{key}`", parse_mode="Markdown")
+    except:
+        bot.send_message(message.chat.id, "❌ Ошибка. Введите число.")
 
 if __name__ == "__main__":
-    logger.info("--- Бот Mrobot запущен и готов к работе ---")
-    bot.polling(none_stop=True, timeout=60)
+    try:
+        logger.info("Сброс вебхуков...")
+        bot.remove_webhook() # Очистка старых сессий
+        time.Sleep(1)
+        logger.info("Бот запущен. Жду сообщений...")
+        bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    except Exception as e:
+        logger.error(f"Критическая ошибка: {e}")
