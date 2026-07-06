@@ -2,10 +2,10 @@ import telebot
 import time
 import hashlib
 import os
+import threading
 from telebot import types
 
 # --- КОНФИГУРАЦИЯ ---
-# Токены ботов
 TOKEN_PURCHASE = "8955167157:AAGFP9w7f47DX87u0uBrLIbTpn2Y5MxraTM"
 TOKEN_GENERATOR = "8982888067:AAFgZ5bCC340zliBSpnYWPIuRUF1NTqOV4o"
 
@@ -23,15 +23,67 @@ def generate_key(days):
     signature = hashlib.sha256((expiry_str + KEY_SECRET).encode()).hexdigest()[:8]
     return f"MR-{expiry_str}-{signature}"
 
-# --- ЛОГИКА БОТА ПОКУПКИ ---
+# --- ЛОГИКА БОТА ПОКУПКИ (С ПОДДЕРЖКОЙ ЗВЕЗД) ---
+
 @bot_purchase.message_handler(commands=['start'])
 def start_purchase(message):
-    markup = types.InlineKeyboardMarkup()
-    btn1 = types.InlineKeyboardButton("Купить ключ (1 мес) - 300₽", url="https://t.me/your_payment_link")
-    btn2 = types.InlineKeyboardButton("Поддержка", url="https://t.me/человек паук")
-    markup.add(btn1)
-    markup.add(btn2)
-    bot_purchase.send_message(message.chat.id, "👋 Привет! Здесь ты можешь купить ключи для VPN Mrobot (EXE/APK).", reply_markup=markup)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    # Кнопки оплаты звездами
+    star_prices = [5, 15, 25, 30, 40, 50, 100, 200]
+    btns = [types.InlineKeyboardButton(f"🌟 {p} звёзд", callback_data=f"buy_stars_{p}") for p in star_prices]
+
+    markup.add(*btns)
+    markup.add(types.InlineKeyboardButton("💳 Оплата картой", url="https://t.me/your_payment_link"))
+    markup.add(types.InlineKeyboardButton("👨‍💻 Поддержка", url="https://t.me/человек паук"))
+
+    bot_purchase.send_message(
+        message.chat.id,
+        "👋 Привет! Выбери количество звёзд для покупки подписки VPN Mrobot:",
+        reply_markup=markup
+    )
+
+@bot_purchase.callback_query_handler(func=lambda call: call.data.startswith("buy_stars_"))
+def handle_star_payment(call):
+    amount = int(call.data.split("_")[2])
+
+    # Определяем на сколько дней подписка в зависимости от звезд (примерная логика)
+    days_map = {5: 1, 15: 3, 25: 7, 30: 10, 40: 14, 50: 30, 100: 90, 200: 365}
+    days = days_map.get(amount, 1)
+
+    prices = [types.LabeledPrice(label=f"Подписка {days} дн.", amount=amount)]
+
+    bot_purchase.send_invoice(
+        call.message.chat.id,
+        title=f"VPN Mrobot - {days} дн.",
+        description=f"Доступ к VPN на {days} дней. Оплата звездами Telegram.",
+        provider_token="", # Пусто для Telegram Stars
+        currency="XTR",
+        prices=prices,
+        invoice_payload=f"payload_days_{days}",
+        start_parameter="vpn-sub"
+    )
+    bot_purchase.answer_callback_query(call.id)
+
+@bot_purchase.pre_checkout_query_handler(func=lambda query: True)
+def checkout(pre_checkout_query):
+    bot_purchase.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+@bot_purchase.message_handler(content_types=['successful_payment'])
+def got_payment(message):
+    payload = message.successful_payment.invoice_payload
+    days = int(payload.split("_")[2])
+
+    # Генерируем ключ автоматически после оплаты
+    key = generate_key(days)
+
+    bot_purchase.send_message(
+        message.chat.id,
+        f"✅ Оплата прошла успешно!\n\nТвой ключ на {days} дн:\n`{key}`\n\nИспользуй его в приложении EXE или APK.",
+        parse_mode="Markdown"
+    )
+
+    # Уведомляем админа
+    bot_purchase.send_message(ADMIN_ID, f"💰 Новая покупка!\nЮзер: {message.from_user.id}\nДней: {days}\nЗвёзд: {message.successful_payment.total_amount}")
 
 # --- ЛОГИКА БОТА ГЕНЕРАЦИИ ---
 def get_gen_keyboard():
@@ -61,17 +113,14 @@ def handle_gen_callback(call):
 
 # --- ЗАПУСК ---
 if __name__ == "__main__":
-    import threading
-
     def run_purchase():
-        print("Бот ПОКУПКИ запущен...")
+        print("Бот ПОКУПКИ запущен (Stars Active)...")
         bot_purchase.infinity_polling(timeout=10, long_polling_timeout=5)
 
     def run_generator():
         print("Бот ГЕНЕРАЦИИ запущен...")
         bot_generator.infinity_polling(timeout=10, long_polling_timeout=5)
 
-    # Запускаем обоих ботов в разных потоках для Railway
     t1 = threading.Thread(target=run_purchase)
     t2 = threading.Thread(target=run_generator)
 
