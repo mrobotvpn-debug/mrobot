@@ -1,9 +1,19 @@
 import telebot
 import time
 import hashlib
+import logging
+import sys
 from telebot import types
 
-# ТОКЕН И КОНФИГ
+# 1. НАСТРОЙКА ЛОГОВ (Смотрите их в панели хостинга!)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# 2. КОНФИГУРАЦИЯ
 BOT_TOKEN = "8842376879:AAEqSCCPITN9PmG5bRQfYmfeFOiXGUcg_18"
 ADMIN_ID = 8414885700
 KEY_SECRET = "mrobot_ultra_secret_2024"
@@ -28,43 +38,50 @@ def get_main_keyboard():
     )
     return markup
 
-# РЕАГИРУЕТ НА ВСЁ (ДЛЯ ТЕСТА)
+# 3. ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ
 @bot.message_handler(func=lambda message: True)
-def echo_all(message):
-    print(f"Получено сообщение от {message.from_user.id}: {message.text}")
+def handle_all_messages(message):
+    user_id = message.from_user.id
+    text = message.text
+    logger.info(f"Получено сообщение от {user_id}: {text}")
 
-    if message.text == "/start" or message.text == "/admin":
-        if message.from_user.id == ADMIN_ID:
-            bot.send_message(message.chat.id, "💎 Админ-панель запущенна:", reply_markup=get_main_keyboard())
+    if text == "/start" or text == "/admin":
+        if user_id == ADMIN_ID:
+            bot.send_message(message.chat.id, "💎 Админ-панель Mrobot запущенна.\nВыберите срок ключа:", reply_markup=get_main_keyboard())
         else:
-            bot.send_message(message.chat.id, f"Привет! Бот работает.\nТвой ID: `{message.from_user.id}`", parse_mode="Markdown")
+            bot.send_message(message.chat.id, f"Привет! Бот работает.\nТвой ID: `{user_id}`\nДоступа к генерации ключей нет.", parse_mode="Markdown")
 
-    elif message.from_user.id == ADMIN_ID:
-        # Если вы просто пишете число, бот сделает ключ
+    elif user_id == ADMIN_ID:
         try:
-            days = int(message.text)
+            days = int(text.strip())
             key = generate_key(days)
             bot.send_message(message.chat.id, f"✅ Ключ на {days} дн:\n\n`{key}`", parse_mode="Markdown")
-        except:
-            bot.send_message(message.chat.id, "Напишите /start для меню или число дней для ключа.")
+        except ValueError:
+            bot.send_message(message.chat.id, "Команда не распознана. Введите число дней или /start")
 
+# 4. ОБРАБОТЧИК КНОПОК
 @bot.callback_query_handler(func=lambda call: True)
-def callback_inline(call):
-    if call.data.startswith("gen_"):
-        if call.data == "gen_custom":
-            bot.send_message(call.message.chat.id, "Введите количество дней числом:")
-        else:
-            days = int(call.data.split("_")[1])
-            key = generate_key(days)
-            bot.send_message(call.message.chat.id, f"✅ Ключ на {days} дн:\n\n`{key}`", parse_mode="Markdown")
+def callback_query(call):
+    if call.from_user.id != ADMIN_ID:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+
+    if call.data == "gen_custom":
+        bot.send_message(call.message.chat.id, "⌛ Введите количество дней числом (просто отправьте сообщение):")
+    elif call.data.startswith("gen_"):
+        days = int(call.data.split("_")[1])
+        key = generate_key(days)
+        bot.send_message(call.message.chat.id, f"✅ Ключ на {days} дн:\n\n`{key}`", parse_mode="Markdown")
+
     bot.answer_callback_query(call.id)
 
+# 5. ЗАПУСК
 if __name__ == "__main__":
-    print("--- ТЕСТОВЫЙ ЗАПУСК БОТА ---")
+    logger.info("Удаление старых вебхуков...")
+    bot.remove_webhook()
+    time.sleep(1)
+    logger.info("Бот запускает бесконечный опрос (polling)...")
     try:
-        bot.remove_webhook()
-        time.sleep(1)
-        print("Бот слушает... Напишите ему в Telegram!")
-        bot.infinity_polling()
+        bot.infinity_polling(timeout=20, long_polling_timeout=10)
     except Exception as e:
-        print(f"Ошибка при запуске: {e}")
+        logger.error(f"Ошибка при работе: {e}")
+        time.sleep(5)
