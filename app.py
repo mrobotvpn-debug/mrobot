@@ -1,19 +1,10 @@
 import telebot
 import time
 import hashlib
-import logging
 import sys
 from telebot import types
 
-# 1. НАСТРОЙКА ЛОГОВ (Смотрите их в панели хостинга!)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
-
-# 2. КОНФИГУРАЦИЯ
+# 1. КОНФИГУРАЦИЯ
 BOT_TOKEN = "8842376879:AAEqSCCPITN9PmG5bRQfYmfeFOiXGUcg_18"
 ADMIN_ID = 8414885700
 KEY_SECRET = "mrobot_ultra_secret_2024"
@@ -23,8 +14,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 def generate_key(days):
     expiry_unix = int(time.time() + (days * 86400))
     expiry_str = str(expiry_unix)
-    sign_src = expiry_str + KEY_SECRET
-    signature = hashlib.sha256(sign_src.encode()).hexdigest()[:8]
+    signature = hashlib.sha256((expiry_str + KEY_SECRET).encode()).hexdigest()[:8]
     return f"MR-{expiry_str}-{signature}"
 
 def get_main_keyboard():
@@ -38,50 +28,38 @@ def get_main_keyboard():
     )
     return markup
 
-# 3. ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    user_id = message.from_user.id
-    text = message.text
-    logger.info(f"Получено сообщение от {user_id}: {text}")
+# РЕАКЦИЯ НА ВСЁ
+@bot.message_handler(func=lambda m: True)
+def handle_all(message):
+    print(f"Message from {message.from_user.id}: {message.text}", flush=True)
 
-    if text == "/start" or text == "/admin":
-        if user_id == ADMIN_ID:
-            bot.send_message(message.chat.id, "💎 Админ-панель Mrobot запущенна.\nВыберите срок ключа:", reply_markup=get_main_keyboard())
+    if message.text == "/start":
+        if message.from_user.id == ADMIN_ID:
+            bot.send_message(message.chat.id, "💎 Админ-панель:", reply_markup=get_main_keyboard())
         else:
-            bot.send_message(message.chat.id, f"Привет! Бот работает.\nТвой ID: `{user_id}`\nДоступа к генерации ключей нет.", parse_mode="Markdown")
+            bot.send_message(message.chat.id, f"Бот работает. Твой ID: {message.from_user.id}")
 
-    elif user_id == ADMIN_ID:
+    elif message.from_user.id == ADMIN_ID:
         try:
-            days = int(text.strip())
+            days = int(message.text.strip())
             key = generate_key(days)
-            bot.send_message(message.chat.id, f"✅ Ключ на {days} дн:\n\n`{key}`", parse_mode="Markdown")
-        except ValueError:
-            bot.send_message(message.chat.id, "Команда не распознана. Введите число дней или /start")
+            bot.send_message(message.chat.id, f"✅ Ключ на {days} дн:\n`{key}`", parse_mode="Markdown")
+        except:
+            bot.send_message(message.chat.id, "Напиши число дней для генерации ключа.")
 
-# 4. ОБРАБОТЧИК КНОПОК
 @bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    if call.from_user.id != ADMIN_ID:
-        return bot.answer_callback_query(call.id, "Нет доступа")
-
-    if call.data == "gen_custom":
-        bot.send_message(call.message.chat.id, "⌛ Введите количество дней числом (просто отправьте сообщение):")
-    elif call.data.startswith("gen_"):
-        days = int(call.data.split("_")[1])
-        key = generate_key(days)
-        bot.send_message(call.message.chat.id, f"✅ Ключ на {days} дн:\n\n`{key}`", parse_mode="Markdown")
-
+def callbacks(call):
+    if call.data.startswith("gen_"):
+        if call.data == "gen_custom":
+            bot.send_message(call.message.chat.id, "Введите число дней.")
+        else:
+            days = int(call.data.split("_")[1])
+            bot.send_message(call.message.chat.id, f"✅ Ключ на {days} дн:\n`{generate_key(days)}`", parse_mode="Markdown")
     bot.answer_callback_query(call.id)
 
-# 5. ЗАПУСК
 if __name__ == "__main__":
-    logger.info("Удаление старых вебхуков...")
+    print("--- ЗАПУСК БОТА ---", flush=True)
     bot.remove_webhook()
     time.sleep(1)
-    logger.info("Бот запускает бесконечный опрос (polling)...")
-    try:
-        bot.infinity_polling(timeout=20, long_polling_timeout=10)
-    except Exception as e:
-        logger.error(f"Ошибка при работе: {e}")
-        time.sleep(5)
+    # Используем infinity_polling для Railway
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
