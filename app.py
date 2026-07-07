@@ -33,8 +33,7 @@ def start_purchase(message):
     btns = [types.InlineKeyboardButton(f"🌟 {p} звёзд", callback_data=f"buy_stars_{p}") for p in star_prices]
 
     markup.add(*btns)
-    markup.add(types.InlineKeyboardButton("💳 Оплата картой", url="https://t.me/your_payment_link"))
-    markup.add(types.InlineKeyboardButton("👨‍💻 Поддержка", url="https://t.me/человек паук"))
+    markup.add(types.InlineKeyboardButton("👨‍💻 Поддержка", url="https://t.me/Moderat0rs"))
 
     bot_purchase.send_message(
         message.chat.id,
