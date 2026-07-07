@@ -89,6 +89,8 @@ def get_gen_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("1 день", callback_data="gen_1"),
+        types.InlineKeyboardButton("7 дней", callback_data="gen_7"),
+        types.InlineKeyboardButton("14 дней", callback_data="gen_14"),
         types.InlineKeyboardButton("30 дней", callback_data="gen_30"),
         types.InlineKeyboardButton("90 дней", callback_data="gen_90"),
         types.InlineKeyboardButton("365 дней", callback_data="gen_365")
